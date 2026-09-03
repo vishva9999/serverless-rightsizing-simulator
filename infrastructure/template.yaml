@@ -1,0 +1,333 @@
+# =============================================================================
+# AWS SAM Template — Serverless Cost & Performance Rightsizing Simulator
+# =============================================================================
+#
+# PHASE 7 PRODUCTION ARCHITECTURE:
+#   1. AWS Serverless HTTP / REST API Gateway (HTTPS + CORS + Cognito Authorizer)
+#   2. AWS Lambda Function running FastAPI via Mangum ASGI adapter
+#   3. Amazon Cognito User Pool & Public SPA User Pool Client
+#   4. DynamoDB Scenarios Table (PAY_PER_REQUEST, partition keys)
+#   5. DynamoDB History Table (PAY_PER_REQUEST, secondary index)
+#   6. Amazon S3 Artifacts Bucket (Private, SSE encrypted)
+#   7. CloudWatch Log Group with 30-day retention
+#   8. Least-Privilege IAM Execution Policies
+#
+# DO NOT AUTO-DEPLOY. Local development uses SQLite + Local JWT.
+# When ready to deploy to AWS:
+#   sam build
+#   sam deploy --guided
+# =============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  serverless-rightsizing-simulator
+  Phase 7 Production Architecture — AWS Lambda, API Gateway, Amazon Cognito,
+  DynamoDB, S3, and CloudWatch Logs integration.
+
+# =============================================================================
+# PARAMETERS
+# =============================================================================
+Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment stage environment
+
+  ProjectName:
+    Type: String
+    Default: serverless-rightsizing-simulator
+    Description: Prefix for resource naming
+
+  FrontendOrigin:
+    Type: String
+    Default: '*'
+    Description: Deployed Frontend / CloudFront origin for API Gateway CORS
+
+# =============================================================================
+# GLOBAL SETTINGS
+# =============================================================================
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 512
+    Tracing: Active
+    Environment:
+      Variables:
+        STORAGE_MODE: aws
+        AUTH_MODE: cognito
+        AWS_REGION: !Ref AWS::Region
+        SCENARIOS_TABLE: !Ref ScenariosTable
+        HISTORY_TABLE: !Ref HistoryTable
+        S3_BUCKET: !Ref SimulationArtifactsBucket
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+        COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
+        COGNITO_REGION: !Ref AWS::Region
+        CORS_ORIGIN: !Ref FrontendOrigin
+
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      AllowOrigin: !Sub "'${FrontendOrigin}'"
+
+# =============================================================================
+# RESOURCES
+# =============================================================================
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # 1. AMAZON COGNITO — User Pool (Identity & Authentication)
+  # ---------------------------------------------------------------------------
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "${ProjectName}-user-pool-${Stage}"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+      UserPoolTags:
+        Project: !Ref ProjectName
+        Stage: !Ref Stage
+
+  # ---------------------------------------------------------------------------
+  # 2. AMAZON COGNITO — User Pool Client (Public SPA / React Client)
+  # ---------------------------------------------------------------------------
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "${ProjectName}-spa-client-${Stage}"
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+
+  # ---------------------------------------------------------------------------
+  # 3. API GATEWAY — Serverless REST API
+  # ---------------------------------------------------------------------------
+  RightsizingApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref Stage
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+            Identity:
+              Header: Authorization
+
+  # ---------------------------------------------------------------------------
+  # 4. AWS LAMBDA FUNCTION — FastAPI Application (via Mangum ASGI Adapter)
+  # ---------------------------------------------------------------------------
+  RightsizingApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-api-${Stage}"
+      CodeUri: ../backend
+      Handler: app.lambda_handler.handler
+      Role: !GetAtt SimulatorAppRole.Arn
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RightsizingApiGateway
+            Path: /
+            Method: ANY
+            Auth:
+              Authorizer: NONE
+        ApiProxy:
+          Type: Api
+          Properties:
+            RestApiId: !Ref RightsizingApiGateway
+            Path: /{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: NONE
+
+  # ---------------------------------------------------------------------------
+  # 5. CLOUDWATCH LOGS — Lambda Execution Log Group (30-day Retention)
+  # ---------------------------------------------------------------------------
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ProjectName}-api-${Stage}"
+      RetentionInDays: 30
+
+  # ---------------------------------------------------------------------------
+  # 6. DYNAMODB TABLE — Scenarios Storage
+  # ---------------------------------------------------------------------------
+  ScenariosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: serverless-rightsizing-scenarios
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: scenario_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: scenario_id
+          KeyType: HASH
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Stage
+          Value: !Ref Stage
+
+  # ---------------------------------------------------------------------------
+  # 7. DYNAMODB TABLE — Simulation History Storage
+  # ---------------------------------------------------------------------------
+  HistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: serverless-rightsizing-history
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: history_id
+          AttributeType: S
+        - AttributeName: scenario_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: history_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: scenario_id-index
+          KeySchema:
+            - AttributeName: scenario_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Stage
+          Value: !Ref Stage
+
+  # ---------------------------------------------------------------------------
+  # 8. S3 BUCKET — Simulation Artifact Exports
+  # ---------------------------------------------------------------------------
+  SimulationArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: serverless-rightsizing-artifacts
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Stage
+          Value: !Ref Stage
+
+  # ---------------------------------------------------------------------------
+  # 9. IAM ROLE — Least Privilege Rightsizing Simulator Execution Role
+  # ---------------------------------------------------------------------------
+  SimulatorAppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-lambda-role-${Stage}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CloudWatchLogsAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-api-${Stage}:*"
+        - PolicyName: DynamoDBSimulatorAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ScenariosTable.Arn
+                  - !GetAtt HistoryTable.Arn
+                  - !Sub "${HistoryTable.Arn}/index/*"
+        - PolicyName: S3SimulatorArtifactAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt SimulationArtifactsBucket.Arn
+                  - !Sub "${SimulationArtifactsBucket.Arn}/*"
+
+# =============================================================================
+# OUTPUTS
+# =============================================================================
+Outputs:
+  ApiUrl:
+    Description: Root API Gateway Endpoint URL
+    Value: !Sub "https://${RightsizingApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+
+  CognitoUserPoolId:
+    Description: Amazon Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+
+  CognitoClientId:
+    Description: Amazon Cognito User Pool App Client ID
+    Value: !Ref CognitoUserPoolClient
+
+  ScenariosTableName:
+    Description: DynamoDB table name for workload scenarios
+    Value: !Ref ScenariosTable
+
+  HistoryTableName:
+    Description: DynamoDB table name for simulation history
+    Value: !Ref HistoryTable
+
+  ArtifactsBucketName:
+    Description: S3 bucket name for simulation artifact exports
+    Value: !Ref SimulationArtifactsBucket

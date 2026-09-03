@@ -1,0 +1,25 @@
+# Security & Environment
+.env
+.env.local
+*.db
+simulator.db
+test_simulator.db
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Builds & Assets
+dist/
+build/
+.output/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
