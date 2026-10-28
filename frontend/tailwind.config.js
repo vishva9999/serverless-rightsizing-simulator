@@ -4,73 +4,35 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Primary brand palette — deep space / cloud theme
-        primary: {
-          50:  "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
-          950: "#1e1b4b",
-        },
-        // Accent — electric teal for highlights and actions
-        accent: {
-          50:  "#ecfeff",
-          100: "#cffafe",
-          200: "#a5f3fc",
-          300: "#67e8f9",
-          400: "#22d3ee",
-          500: "#06b6d4",
-          600: "#0891b2",
-          700: "#0e7490",
-          800: "#155e75",
-          900: "#164e63",
-        },
-        // Semantic success / warning / danger
-        success: "#10b981",
-        warning: "#f59e0b",
-        danger:  "#ef4444",
-        // Dark background shades
-        dark: {
-          900: "#0a0e1a",
-          800: "#0f1629",
-          700: "#151d35",
-          600: "#1c2645",
-          500: "#243058",
+        command: {
+          bg: '#080c14',
+          surface: '#0d131f',
+          card: '#131b2e',
+          cardHover: '#18223a',
+          border: '#1e293b',
+          borderBright: '#334155',
+          cyan: '#06b6d4',
+          cyanGlow: 'rgba(6, 182, 212, 0.15)',
+          amber: '#f59e0b',
+          amberGlow: 'rgba(245, 158, 11, 0.15)',
+          red: '#ef4444',
+          redGlow: 'rgba(239, 68, 68, 0.15)',
+          emerald: '#10b981',
+          emeraldGlow: 'rgba(16, 185, 129, 0.15)',
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Fira Code", "monospace"],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
       boxShadow: {
-        glow:      "0 0 20px rgba(99,102,241,0.35)",
-        "glow-sm": "0 0 10px rgba(99,102,241,0.25)",
-        card:      "0 4px 24px rgba(0,0,0,0.4)",
-      },
-      backgroundImage: {
-        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "mesh-dark":
-          "radial-gradient(at 40% 20%, hsla(228,100%,15%,1) 0px, transparent 50%), " +
-          "radial-gradient(at 80% 0%,  hsla(249,100%,15%,1) 0px, transparent 50%), " +
-          "radial-gradient(at 0%  50%, hsla(220,100%,10%,1) 0px, transparent 50%)",
-      },
-      animation: {
-        "fade-in":    "fadeIn 0.4s ease-out",
-        "slide-in":   "slideIn 0.35s ease-out",
-        "pulse-slow": "pulse 3s cubic-bezier(0.4,0,0.6,1) infinite",
-      },
-      keyframes: {
-        fadeIn:  { from: { opacity: 0 },                    to: { opacity: 1 } },
-        slideIn: { from: { opacity: 0, transform: "translateY(8px)" }, to: { opacity: 1, transform: "translateY(0)" } },
+        'glow-cyan': '0 0 15px -3px rgba(6, 182, 212, 0.3)',
+        'glow-red': '0 0 15px -3px rgba(239, 68, 68, 0.3)',
+        'glow-amber': '0 0 15px -3px rgba(245, 158, 11, 0.3)',
       },
     },
   },

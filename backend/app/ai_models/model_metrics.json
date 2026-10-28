@@ -1,0 +1,14 @@
+{
+  "random_forest": {
+    "mae": 4.691,
+    "rmse": 5.861,
+    "r2": 0.8863,
+    "accuracy": 0.804
+  },
+  "gradient_boosting": {
+    "mae": 4.956,
+    "rmse": 6.296,
+    "r2": 0.8688,
+    "accuracy": 0.814
+  }
+}
